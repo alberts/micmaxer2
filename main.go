@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gen2brain/malgo"
 	"github.com/getlantern/systray"
@@ -35,6 +36,9 @@ func main() {
 		log.Println("Volume change listener is active - changes will be logged")
 	}
 
+	// Start the periodic volume enforcer
+	startPeriodicVolumeEnforcer()
+
 	// Run the app
 	systray.Run(onReady, onExit)
 }
@@ -50,7 +54,7 @@ func onReady() {
 	// Set the icon and tooltip
 	systray.SetIcon(iconBytes)
 	systray.SetTitle("")
-	systray.SetTooltip("MicMaxer2")
+	systray.SetTooltip("MicMaxer")
 
 	// Create menu items
 	// Note: The systray library shows menu on both left and right click
@@ -141,7 +145,7 @@ func onExit() {
 	}
 
 	// Cleanup tasks go here
-	log.Println("MicMaxer2 exited")
+	log.Println("MicMaxer exited")
 }
 
 // getDeviceMenuTitle returns the menu title with appropriate state indicator
@@ -296,4 +300,38 @@ func saveDeviceStates() {
 	// Save to preferences
 	saveCheckedDevices(checkedDeviceIDs)
 	log.Printf("Saved %d checked device(s) to preferences", len(checkedDeviceIDs))
+}
+
+// startPeriodicVolumeEnforcer starts a background goroutine that periodically
+// reapplies volume settings for all checked devices
+func startPeriodicVolumeEnforcer() {
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+
+		log.Println("Started periodic volume enforcer - will reapply settings every minute")
+
+		for range ticker.C {
+			// For each checked device, reapply the volume setting
+			for deviceID, checked := range deviceStates {
+				if checked {
+					// Find the device name for logging
+					deviceName := "Unknown"
+					for _, device := range audioInputDevices {
+						if device.ID.String() == deviceID {
+							deviceName = device.Name()
+							break
+						}
+					}
+
+					// Set the input level to 100%
+					if err := setSystemInputLevel(1.0); err != nil {
+						log.Printf("Periodic enforcer: Error setting audio level to 100%% for device '%s': %v", deviceName, err)
+					} else {
+						log.Printf("Periodic enforcer: Successfully reapplied 100%% audio level for device '%s'", deviceName)
+					}
+				}
+			}
+		}
+	}()
 }
