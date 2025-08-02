@@ -472,27 +472,20 @@ func goVolumeChangeCallback(volume C.float, muted C.int) {
 	}
 
 	// Check if any device is selected in the menu
-	hasSelectedDevice := false
-	for _, enabled := range deviceStates {
-		if enabled {
-			hasSelectedDevice = true
-			break
-		}
-	}
+	if hasSelectedDevice() && volumeFloat < 1.0 && !isMuted {
+		log.Printf("[Volume Change Event] Detected change on monitored device - resetting to 100%%")
 
-	// If a device is selected and the volume is not already at 100%, reset it
-	if hasSelectedDevice && volumeFloat < 1.0 && !isMuted {
-		log.Println("[Volume Change Event] Detected change on monitored device - resetting to 100% after 1 second")
+		// Schedule volume reset in a non-blocking goroutine
+		go func() {
+			time.Sleep(1 * time.Second)
 
-		// Sleep for 1 second
-		time.Sleep(1 * time.Second)
-
-		// Set the volume back to 100%
-		if err := setSystemInputLevel(1.0); err != nil {
-			log.Printf("[Volume Change Event] Error resetting volume to 100%%: %v", err)
-		} else {
-			log.Println("[Volume Change Event] Successfully reset volume to 100%")
-		}
+			// Set the volume back to 100%
+			if err := setSystemInputLevel(1.0); err != nil {
+				log.Printf("[Volume Change Event] Error resetting volume to 100%%: %v", err)
+			} else {
+				log.Printf("[Volume Change Event] Successfully reset volume to 100%%")
+			}
+		}()
 	}
 }
 
