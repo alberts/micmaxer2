@@ -83,27 +83,6 @@ micmaxer2/
 └── REQUIREMENTS.md  # Original requirements
 ```
 
-## Customization
-
-### Icon
-
-To create a new icon, you can use ImageMagick:
-
-```bash
-convert -size 32x32 xc:transparent \
-    -fill '#4A90E2' \
-    -draw 'roundrectangle 4,4 28,28 4,4' \
-    -fill white -font Helvetica-Bold -pointsize 18 \
-    -gravity center -annotate +0+0 'M' \
-    assets/icon.png
-```
-
-Or replace `assets/icon.png` with your own 32x32 PNG icon.
-
-### Left-click Behavior
-
-The current implementation shows a notification when the menu bar icon is left-clicked. To customize this behavior, modify the `showNotification()` function in `main.go`.
-
 ## License
 
 This project is private and proprietary.
