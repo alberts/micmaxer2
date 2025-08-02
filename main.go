@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	gosxnotifier "github.com/deckarep/gosx-notifier"
 	"github.com/gen2brain/malgo"
 	"github.com/getlantern/systray"
 )
@@ -23,6 +22,17 @@ func main() {
 	// Scan and log audio input devices on startup
 	if err := scanAudioInputDevices(); err != nil {
 		log.Printf("Error scanning audio input devices: %v", err)
+	}
+
+	// Load saved preferences and restore device states
+	loadAndApplyDeviceStates()
+
+	// Start the volume change listener
+	if err := startVolumeChangeListener(); err != nil {
+		log.Printf("Error starting volume change listener: %v", err)
+		log.Println("Volume change events will not be monitored")
+	} else {
+		log.Println("Volume change listener is active - changes will be logged")
 	}
 
 	// Run the app
@@ -46,8 +56,6 @@ func onReady() {
 	// Create menu items
 	// Note: The systray library shows menu on both left and right click
 	// but we can't differentiate between them
-	mShow := systray.AddMenuItem("Show Notification", "Show a notification")
-	systray.AddSeparator()
 
 	// Add audio input devices section
 	if len(audioInputDevices) > 0 {
@@ -88,13 +96,23 @@ func onReady() {
 					// Log the state change
 					log.Printf("Device '%s' toggled to: %v", name, deviceStates[id])
 
-					// If going from unchecked to checked, query and log the audio level
+					// Save preferences
+					saveDeviceStates()
+
+					// If going from unchecked to checked, query and log the audio level, then set to 100%
 					if wasUnchecked && deviceStates[id] {
 						level, err := getAudioInputLevel(id)
 						if err != nil {
 							log.Printf("Error getting audio level for device '%s': %v", name, err)
 						} else {
-							log.Printf("Audio input level for device '%s': %d", name, level)
+							log.Printf("Audio input level for device '%s': %d%%", name, level)
+						}
+
+						// Set the input level to 100%
+						if err := setSystemInputLevel(1.0); err != nil {
+							log.Printf("Error setting audio level to 100%% for device '%s': %v", name, err)
+						} else {
+							log.Printf("Successfully set audio level to 100%% for device '%s'", name)
 						}
 					}
 
@@ -111,40 +129,20 @@ func onReady() {
 
 	// Handle menu item clicks in a goroutine
 	go func() {
-		for {
-			select {
-			case <-mShow.ClickedCh:
-				showNotification()
-			case <-mQuit.ClickedCh:
-				systray.Quit()
-			}
+		for range mQuit.ClickedCh {
+			systray.Quit()
 		}
 	}()
 }
 
 func onExit() {
+	// Stop the volume change listener
+	if err := stopVolumeChangeListener(); err != nil {
+		log.Printf("Error stopping volume change listener: %v", err)
+	}
+
 	// Cleanup tasks go here
 	log.Println("MicMaxer2 exited")
-}
-
-func showNotification() {
-	// Create a new notification
-	note := gosxnotifier.NewNotification("MicMaxer2 is running")
-
-	// Set the title
-	note.Title = "MicMaxer2"
-
-	// Set the subtitle
-	note.Subtitle = "Menu bar app"
-
-	// Optionally, set a sound (you can use gosxnotifier.Default, gosxnotifier.Basso, etc.)
-	note.Sound = gosxnotifier.Default
-
-	// Push the notification
-	err := note.Push()
-	if err != nil {
-		log.Printf("Error showing notification: %v", err)
-	}
 }
 
 // getDefaultIcon returns a simple default icon as PNG bytes
@@ -251,4 +249,70 @@ func scanAudioInputDevices() error {
 	log.Println("==========================")
 
 	return nil
+}
+
+// loadAndApplyDeviceStates loads saved device states from preferences and applies them
+func loadAndApplyDeviceStates() {
+	// Initialize device states map
+	if deviceStates == nil {
+		deviceStates = make(map[string]bool)
+	}
+
+	// Load saved device IDs
+	savedDeviceIDs, err := loadCheckedDevices()
+	if err != nil {
+		log.Printf("Error loading saved device preferences: %v", err)
+		return
+	}
+
+	if len(savedDeviceIDs) == 0 {
+		log.Println("No saved device preferences found")
+		return
+	}
+
+	log.Printf("Loaded %d saved device preference(s)", len(savedDeviceIDs))
+
+	// Apply saved states to existing devices
+	for _, savedID := range savedDeviceIDs {
+		// Check if this device still exists
+		deviceExists := false
+		var deviceName string
+		for _, device := range audioInputDevices {
+			if device.ID.String() == savedID {
+				deviceExists = true
+				deviceName = device.Name()
+				break
+			}
+		}
+
+		if deviceExists {
+			// Mark device as checked
+			deviceStates[savedID] = true
+			log.Printf("Restored checked state for device '%s'", deviceName)
+
+			// Set the input level to 100%
+			if err := setSystemInputLevel(1.0); err != nil {
+				log.Printf("Error setting audio level to 100%% for device '%s': %v", deviceName, err)
+			} else {
+				log.Printf("Successfully set audio level to 100%% for device '%s'", deviceName)
+			}
+		} else {
+			log.Printf("Saved device ID '%s' no longer exists on the system", savedID)
+		}
+	}
+}
+
+// saveDeviceStates saves the currently checked device IDs to preferences
+func saveDeviceStates() {
+	// Collect all checked device IDs
+	var checkedDeviceIDs []string
+	for id, checked := range deviceStates {
+		if checked {
+			checkedDeviceIDs = append(checkedDeviceIDs, id)
+		}
+	}
+
+	// Save to preferences
+	saveCheckedDevices(checkedDeviceIDs)
+	log.Printf("Saved %d checked device(s) to preferences", len(checkedDeviceIDs))
 }
