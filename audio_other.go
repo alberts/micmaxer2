@@ -21,7 +21,7 @@ func stopVolumeChangeListener() error {
 }
 
 // setSystemInputLevel is not implemented for non-Darwin systems
-func setSystemInputLevel(volume float32) error {
+func setSystemInputLevel(deviceID string, volume float32) error {
 	return fmt.Errorf("setting input device volume is only supported on macOS")
 }
 

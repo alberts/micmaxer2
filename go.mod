@@ -3,7 +3,6 @@ module github.com/alberts/micmaxer2
 go 1.24.3
 
 require (
-	github.com/deckarep/gosx-notifier v0.0.0-20180201035817-e127226297fb
 	github.com/gen2brain/malgo v0.11.23
 	github.com/getlantern/systray v1.2.2
 )

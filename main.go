@@ -18,7 +18,7 @@ var iconData embed.FS
 // Constants for configuration
 const (
 	volumeEnforcerInterval = 60 * time.Second
-	volumeResetDelay       = 1 * time.Second
+	volumeResetDelay       = 0 * time.Second
 	targetVolumeLevel      = 1.0 // 100%
 )
 
@@ -133,7 +133,7 @@ func onReady() {
 						}
 
 						// Set the input level to target volume
-						if err := setSystemInputLevel(targetVolumeLevel); err != nil {
+						if err := setSystemInputLevel(id, targetVolumeLevel); err != nil {
 							log.Printf("Error setting audio level to %d%% for device '%s': %v", int(targetVolumeLevel*100), name, err)
 						} else {
 							log.Printf("Successfully set audio level to %d%% for device '%s'", int(targetVolumeLevel*100), name)
@@ -282,7 +282,7 @@ func loadAndApplyDeviceStates() {
 			log.Printf("Restored checked state for device '%s'", deviceName)
 
 			// Set the input level to target volume
-			if err := setSystemInputLevel(targetVolumeLevel); err != nil {
+			if err := setSystemInputLevel(savedID, targetVolumeLevel); err != nil {
 				log.Printf("Error setting audio level to %d%% for device '%s': %v", int(targetVolumeLevel*100), deviceName, err)
 			} else {
 				log.Printf("Successfully set audio level to %d%% for device '%s'", int(targetVolumeLevel*100), deviceName)
@@ -359,9 +359,9 @@ func enforceVolumeSettings() {
 	state.mu.RUnlock()
 
 	// Apply volume settings without holding the lock
-	for _, deviceName := range checkedDevices {
+	for deviceID, deviceName := range checkedDevices {
 		// Set the input level to target volume
-		if err := setSystemInputLevel(targetVolumeLevel); err != nil {
+		if err := setSystemInputLevel(deviceID, targetVolumeLevel); err != nil {
 			log.Printf("Periodic enforcer: Error setting audio level to %d%% for device '%s': %v",
 				int(targetVolumeLevel*100), deviceName, err)
 		} else {

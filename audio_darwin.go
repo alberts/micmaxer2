@@ -198,6 +198,130 @@ static int unregisterVolumeChangeListener() {
     return 0; // Success
 }
 
+// Get AudioDeviceID from a device UID string
+static AudioDeviceID getAudioDeviceIDFromUID(const char* deviceUID) {
+    if (deviceUID == NULL) {
+        return kAudioDeviceUnknown;
+    }
+
+    // Create CFString from device UID
+    CFStringRef uidString = CFStringCreateWithCString(NULL, deviceUID, kCFStringEncodingUTF8);
+    if (uidString == NULL) {
+        return kAudioDeviceUnknown;
+    }
+
+    // Get all audio devices
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioHardwarePropertyDevices,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+
+    UInt32 dataSize = 0;
+    OSStatus status = AudioObjectGetPropertyDataSize(
+        kAudioObjectSystemObject,
+        &propertyAddress,
+        0,
+        NULL,
+        &dataSize
+    );
+
+    if (status != noErr) {
+        CFRelease(uidString);
+        return kAudioDeviceUnknown;
+    }
+
+    UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
+    AudioDeviceID* devices = (AudioDeviceID*)malloc(dataSize);
+
+    status = AudioObjectGetPropertyData(
+        kAudioObjectSystemObject,
+        &propertyAddress,
+        0,
+        NULL,
+        &dataSize,
+        devices
+    );
+
+    if (status != noErr) {
+        free(devices);
+        CFRelease(uidString);
+        return kAudioDeviceUnknown;
+    }
+
+    AudioDeviceID foundDevice = kAudioDeviceUnknown;
+
+    // Check each device for matching UID
+    for (UInt32 i = 0; i < deviceCount; i++) {
+        // Get device UID
+        propertyAddress.mSelector = kAudioDevicePropertyDeviceUID;
+        propertyAddress.mScope = kAudioObjectPropertyScopeGlobal;
+
+        CFStringRef deviceUIDStr = NULL;
+        dataSize = sizeof(CFStringRef);
+        status = AudioObjectGetPropertyData(
+            devices[i],
+            &propertyAddress,
+            0,
+            NULL,
+            &dataSize,
+            &deviceUIDStr
+        );
+
+        if (status == noErr && deviceUIDStr != NULL) {
+            // Compare UIDs
+            if (CFStringCompare(uidString, deviceUIDStr, 0) == kCFCompareEqualTo) {
+                foundDevice = devices[i];
+                CFRelease(deviceUIDStr);
+                break;
+            }
+            CFRelease(deviceUIDStr);
+        }
+    }
+
+    free(devices);
+    CFRelease(uidString);
+    return foundDevice;
+}
+
+// Get the volume scalar for a specific input device by UID
+static float getInputDeviceVolume(const char* deviceUID) {
+    AudioDeviceID deviceID = getAudioDeviceIDFromUID(deviceUID);
+    if (deviceID == kAudioDeviceUnknown) {
+        return -1.0; // Error getting device
+    }
+
+    // Check if the device has volume control on the input scope
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioDevicePropertyVolumeScalar,
+        kAudioDevicePropertyScopeInput,
+        kAudioObjectPropertyElementMain
+    };
+
+    Boolean hasProperty = AudioObjectHasProperty(deviceID, &propertyAddress);
+    if (!hasProperty) {
+        return -1.0; // Device doesn't support volume control
+    }
+
+    // Get the volume scalar value (0.0 to 1.0)
+    Float32 volume = 0.0;
+    UInt32 size = sizeof(Float32);
+    OSStatus status = AudioObjectGetPropertyData(
+        deviceID,
+        &propertyAddress,
+        0,
+        NULL,
+        &size,
+        &volume
+    );
+
+    if (status != noErr) {
+        return -1.0; // Error getting volume
+    }
+
+    return volume;
+}
+
 // Get the volume scalar for the default input device
 static float getDefaultInputDeviceVolume() {
     AudioDeviceID deviceID;
@@ -252,6 +376,44 @@ static float getDefaultInputDeviceVolume() {
     return volume;
 }
 
+// Get the mute state for a specific input device by UID
+static int getInputDeviceMute(const char* deviceUID) {
+    AudioDeviceID deviceID = getAudioDeviceIDFromUID(deviceUID);
+    if (deviceID == kAudioDeviceUnknown) {
+        return -1; // Error getting device
+    }
+
+    // Check if the device has mute control
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioDevicePropertyMute,
+        kAudioDevicePropertyScopeInput,
+        kAudioObjectPropertyElementMain
+    };
+
+    Boolean hasProperty = AudioObjectHasProperty(deviceID, &propertyAddress);
+    if (!hasProperty) {
+        return -1; // Device doesn't support mute control
+    }
+
+    // Get the mute state
+    UInt32 muted = 0;
+    UInt32 size = sizeof(UInt32);
+    OSStatus status = AudioObjectGetPropertyData(
+        deviceID,
+        &propertyAddress,
+        0,
+        NULL,
+        &size,
+        &muted
+    );
+
+    if (status != noErr) {
+        return -1; // Error getting mute state
+    }
+
+    return muted ? 1 : 0;
+}
+
 // Get the mute state for the default input device
 static int getDefaultInputDeviceMute() {
     AudioDeviceID deviceID;
@@ -304,6 +466,44 @@ static int getDefaultInputDeviceMute() {
     }
 
     return muted ? 1 : 0;
+}
+
+// Set the volume scalar for a specific input device by UID
+static int setInputDeviceVolume(const char* deviceUID, float volume) {
+    AudioDeviceID deviceID = getAudioDeviceIDFromUID(deviceUID);
+    if (deviceID == kAudioDeviceUnknown) {
+        return -1; // Error getting device
+    }
+
+    // Set up the property address for volume
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioDevicePropertyVolumeScalar,
+        kAudioDevicePropertyScopeInput,
+        kAudioObjectPropertyElementMain
+    };
+
+    // Check if the device has volume control
+    Boolean hasProperty = AudioObjectHasProperty(deviceID, &propertyAddress);
+    if (!hasProperty) {
+        return -2; // Device doesn't support volume control
+    }
+
+    // Set the volume scalar value (0.0 to 1.0)
+    Float32 volumeValue = volume;
+    OSStatus status = AudioObjectSetPropertyData(
+        deviceID,
+        &propertyAddress,
+        0,
+        NULL,
+        sizeof(Float32),
+        &volumeValue
+    );
+
+    if (status != noErr) {
+        return -3; // Error setting volume
+    }
+
+    return 0; // Success
 }
 
 // Set the volume scalar for the default input device
@@ -449,7 +649,6 @@ import "C"
 import (
 	"fmt"
 	"log"
-	"time"
 	"unsafe"
 )
 
@@ -477,10 +676,8 @@ func goVolumeChangeCallback(volume C.float, muted C.int) {
 
 		// Schedule volume reset in a non-blocking goroutine
 		go func() {
-			time.Sleep(1 * time.Second)
-
-			// Set the volume back to 100%
-			if err := setSystemInputLevel(1.0); err != nil {
+			// Set the volume back to 100% on the default device
+			if err := setSystemInputLevel("", 1.0); err != nil {
 				log.Printf("[Volume Change Event] Error resetting volume to 100%%: %v", err)
 			} else {
 				log.Printf("[Volume Change Event] Successfully reset volume to 100%%")
@@ -520,15 +717,27 @@ func stopVolumeChangeListener() error {
 // getSystemInputLevel reads the input volume level from macOS audio device settings
 // without capturing any audio. Returns a value between 0-100.
 func getSystemInputLevel(deviceID string) (int, error) {
-	// Get the volume scalar from Core Audio (0.0 to 1.0)
-	volumeScalar := C.getDefaultInputDeviceVolume()
+	var volumeScalar C.float
+	var muteState C.int
+
+	// If deviceID is empty, use the default device
+	if deviceID == "" {
+		volumeScalar = C.getDefaultInputDeviceVolume()
+		muteState = C.getDefaultInputDeviceMute()
+	} else {
+		// Convert deviceID to C string and get volume for specific device
+		cDeviceID := C.CString(deviceID)
+		defer C.free(unsafe.Pointer(cDeviceID))
+
+		volumeScalar = C.getInputDeviceVolume(cDeviceID)
+		muteState = C.getInputDeviceMute(cDeviceID)
+	}
 
 	if volumeScalar < 0 {
 		return 0, fmt.Errorf("failed to get input device volume (device may not support volume control)")
 	}
 
 	// Check if device is muted
-	muteState := C.getDefaultInputDeviceMute()
 	if muteState == 1 {
 		// Device is muted, return 0
 		return 0, nil
@@ -547,9 +756,10 @@ func getSystemInputLevel(deviceID string) (int, error) {
 	return volumePercent, nil
 }
 
-// setSystemInputLevel sets the input volume level for the default input device
+// setSystemInputLevel sets the input volume level for a specific input device
+// The deviceID parameter specifies which device to control (empty string for default device)
 // The volume parameter should be between 0.0 and 1.0
-func setSystemInputLevel(volume float32) error {
+func setSystemInputLevel(deviceID string, volume float32) error {
 	// Ensure volume is within bounds
 	if volume < 0.0 {
 		volume = 0.0
@@ -557,14 +767,24 @@ func setSystemInputLevel(volume float32) error {
 		volume = 1.0
 	}
 
-	// Call the C function to set the volume
-	result := C.setDefaultInputDeviceVolume(C.float(volume))
+	var result C.int
+
+	// If deviceID is empty, use the default device
+	if deviceID == "" {
+		result = C.setDefaultInputDeviceVolume(C.float(volume))
+	} else {
+		// Convert deviceID to C string and set volume for specific device
+		cDeviceID := C.CString(deviceID)
+		defer C.free(unsafe.Pointer(cDeviceID))
+
+		result = C.setInputDeviceVolume(cDeviceID, C.float(volume))
+	}
 
 	switch result {
 	case 0:
 		return nil // Success
 	case -1:
-		return fmt.Errorf("failed to get default input device")
+		return fmt.Errorf("failed to get device")
 	case -2:
 		return fmt.Errorf("device doesn't support volume control")
 	case -3:
